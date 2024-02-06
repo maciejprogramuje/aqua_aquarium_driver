@@ -66,19 +66,12 @@ int sunsetStartHh;
 int sunsetStartMm;
 int sunsetEndHh;
 int sunsetEndMm;
-//------------------------------------- screens -----------------------------------
-enum Screens {
-  MAIN_SCREEN,
-  MENU_SCREEN,
-  SET_TIME_SCREEN,
-  SET_TEMP_ALARM_SCREEN,
-  SET_LIGHT_ON_OFF_SCREEN
-};
 //------------------------------------- menu --------------------------------------
 //-- wyświetlanie Serial.println(menuStrings[0]);
 enum Menu {
-  MAIN_MENU,
-  BACK_TO_MAIN_SCREEN,
+  MAIN_SCREEN,
+  INVALID_TIME_SCREEN,
+  MENU_SCREEN,
   TIME_SUNRISE_START,
   TIME_SUNRISE_END,
   TIME_SUNSET_START,
@@ -91,7 +84,8 @@ enum Menu {
 #define IDNAME(menuName) #menuName
 
 const char* menuNames[] = {
-  IDNAME(MAIN_MENU),
+  IDNAME(MAIN_SCREEN),
+  IDNAME(INVALID_TIME_SCREEN),
   IDNAME(BACK_TO_MAIN_SCREEN),
   IDNAME(TIME_SUNRISE_START),
   IDNAME(TIME_SUNRISE_END),
@@ -103,7 +97,8 @@ const char* menuNames[] = {
 };
 
 const char* menuStrings[] = {
-  "Main menu",
+  "Main screen",
+  "Invalid time"
   "[...]",
   "Sunrise start",
   "Sunrise end",
@@ -115,6 +110,7 @@ const char* menuStrings[] = {
 };
 
 int menu;
+int sizeOfMenu;
 int menuSelectedLine;
 //------------------------------------- eeprom ------------------------------------
 //-- adresacja pamieci eeprom (nieulotnej)
@@ -164,8 +160,10 @@ void setup() {
 
   pinMode(PWM_LED, OUTPUT);
 
-  menu = MAIN_SCREEN;
-  menuSelectedLine = 1;
+  menu = MENU_SCREEN;
+  sizeOfMenu = sizeof(Menu) / sizeof(Menu[0]);
+  menuSelectedLine = MENU_SCREEN;
+
 
   nokiaLightDelay = nokiaLightDelayTemplate;
 
@@ -215,14 +213,17 @@ void loop() {
 //------------------------------------ menu ---------------------------------------
 void showScreenDependOnMenu() {
   switch (menu) {
-    case MAIN_MENU:
+    case MAIN_SCREEN:
       showMenuScreen();
       break;
-    case BACK_TO_MAIN_SCREEN:
+    case INVALID_TIME_SCREEN:
+      showInvalidTimeAlertScreen();
+      break;
+    case MENU_SCREEN:
       showMainScreen(
         getDateNowForScreen(),
         getTimeNowForScreen(),
-        convertTemperatureToString(getTemperatureFromSensor()));
+        convertTemperatureToString(temperatureFromSensor));
       break;
     case TIME_SUNRISE_START:
       showTimeSettingScreen(sunriseStartHh, sunriseStartMm);
@@ -253,30 +254,31 @@ void showScreenDependOnMenu() {
 
 void buttonsActionsDependOnMenu() {
   switch (menu) {
-    case MAIN_MENU:
+    case MAIN_SCREEN:
+    case INVALID_TIME_SCREEN:
+      if (buttonUpDebouncer.fell() || buttonDownDebouncer.fell() || buttonClickDebouncer.fell()) {
+        nokiaLightDelay = nokiaLightDelayTemplate;
+
+        menu = MENU_SCREEN;
+      }
+      break;
+    case MENU_SCREEN:
       if (buttonUpDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
         menuSelectedLine--;
-        if (menuSelectedLine <= 1) menuSelectedLine = 1;
+        if (menuSelectedLine < MENU_SCREEN) menuSelectedLine = MENU_SCREEN;
       }
       if (buttonDownDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
         menuSelectedLine++;
-        if (menuSelectedLine >= sizeof(menuStrings) / sizeof(menuStrings[0]) - 1) menuSelectedLine = sizeof(menuStrings) / sizeof(menuStrings[0]) - 1;
+        if (menuSelectedLine > sizeOfMenu - 1) sizeOfMenu - 1;
       }
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
         menu = menuSelectedLine;
-      }
-      break;
-    case BACK_TO_MAIN_SCREEN:
-      if (buttonUpDebouncer.fell() || buttonDownDebouncer.fell() || buttonClickDebouncer.fell()) {
-        nokiaLightDelay = nokiaLightDelayTemplate;
-
-        menu = MAIN_MENU;
       }
       break;
     case TIME_SUNRISE_START:
@@ -293,10 +295,14 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        setValueToEeprom(eepromSunriseStartHh[0], eepromSunriseStartHh[1], sunriseStartHh);
-        setValueToEeprom(eepromSunriseStartMm[0], eepromSunriseStartMm[1], sunriseStartMm);
+        if () {
+          menu = INVALID_TIME_SCREEN;
+        } else {
+          setValueToEeprom(eepromSunriseStartHh[0], eepromSunriseStartHh[1], sunriseStartHh);
+          setValueToEeprom(eepromSunriseStartMm[0], eepromSunriseStartMm[1], sunriseStartMm);
 
-        menu = MAIN_MENU;
+          menu = MENU_SCREEN;
+        }
       }
       break;
     case TIME_SUNRISE_END:
@@ -316,7 +322,7 @@ void buttonsActionsDependOnMenu() {
         setValueToEeprom(eepromSunriseEndHh[0], eepromSunriseEndHh[1], sunriseEndHh);
         setValueToEeprom(eepromSunriseEndMm[0], eepromSunriseEndMm[1], sunriseEndMm);
 
-        menu = MAIN_MENU;
+        menu = MENU_SCREEN;
       }
       break;
     case TIME_SUNSET_START:
@@ -336,7 +342,7 @@ void buttonsActionsDependOnMenu() {
         setValueToEeprom(eepromSunsetStartHh[0], eepromSunsetStartHh[1], sunsetStartHh);
         setValueToEeprom(eepromSunsetStartMm[0], eepromSunsetStartMm[1], sunsetStartMm);
 
-        menu = MAIN_MENU;
+        menu = MENU_SCREEN;
       }
       break;
     case TIME_SUNSET_END:
@@ -356,7 +362,7 @@ void buttonsActionsDependOnMenu() {
         setValueToEeprom(eepromSunsetEndHh[0], eepromSunsetEndHh[1], sunsetEndHh);
         setValueToEeprom(eepromSunsetEndMm[0], eepromSunsetEndMm[1], sunsetEndMm);
 
-        menu = MAIN_MENU;
+        menu = MENU_SCREEN;
       }
       break;
     case SET_CLOCK:
@@ -375,7 +381,7 @@ void buttonsActionsDependOnMenu() {
 
         rtClock.setDS1302Time(0, tempMm, tempHh, int(rtClock.dayofweek), int(rtClock.dayofmonth), int(rtClock.month), int(rtClock.year));
 
-        menu = MAIN_MENU;
+        menu = MENU_SCREEN;
       }
       break;
     case SET_TEMP_ALARM:
@@ -396,7 +402,7 @@ void buttonsActionsDependOnMenu() {
 
         setValueToEeprom(eepromTemperatureAlarmTemplate[0], eepromTemperatureAlarmTemplate[1], temperatureAlarmTemplate);
 
-        menu = MAIN_MENU;
+        menu = MENU_SCREEN;
       }
       break;
     case SET_LIGHT_ON_OFF:
@@ -413,7 +419,7 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        menu = MAIN_MENU;
+        menu = MENU_SCREEN;
       }
       break;
   }
@@ -558,7 +564,7 @@ void setValueToEeprom(int tStartByte, int tSizeByte, T newValue) {
 void showMenuScreen() {
   nokia.clrScr();
   nokia.setFont(SmallFont);
-  for (int i = 1; i < sizeof(menuStrings) / sizeof(menuStrings[0]); i++) {
+  for (int i = MENU_SCREEN; i < sizeOfMenu; i++) {
     if (menuSelectedLine == i) nokia.invertText(true);
     if (menuSelectedLine > 7) {
       nokia.print(menuStrings[i], LEFT, (i - 6) * 9);
@@ -654,6 +660,17 @@ void showLedOnOffManualScreen() {
   nokia.update();
 }
 
+void showInvalidTimeAlertScreen() {
+  nokia.clrScr();
+  nokia.setFont(TinyFont);
+  nokia.print("The time must be", CENTER, 4);
+  nokia.print("greater than", CENTER, 12);
+  nokia.print("the previous step", CENTER, 20);
+  nokia.print("time and less than", CENTER, 28);
+  nokia.print("the next step time!", CENTER, 36);
+  nokia.drawRect(0, 0, 83, 47);
+  nokia.update();
+}
 //------------------------------------ LED MODE RECTANGLES ------------------------
 void drawLedModeRectangle() {
   nokia.clrRect(0, 0, 6, 8);
@@ -704,16 +721,3 @@ void drawOff() {
   nokia.drawRect(2, 2, 4, 6);
   nokia.drawRect(3, 3, 3, 5);
 }
-
-
-//void showInvalidTimeAlertScreen() {
-// nokia.clrScr();
-// nokia.setFont(TinyFont);
-// nokia.print("The time must be", CENTER, 4);
-// nokia.print("greater than", CENTER, 12);
-// nokia.print("the previous step", CENTER, 20);
-// nokia.print("time and less than", CENTER, 28);
-// nokia.print("the next step time!", CENTER, 36);
-// nokia.drawRect(0, 0, 83, 47);
-// nokia.update();
-//}
