@@ -164,7 +164,6 @@ void setup() {
   sizeOfMenu = sizeof(Menu) / sizeof(Menu[0]);
   menuSelectedLine = MENU_SCREEN;
 
-
   nokiaLightDelay = nokiaLightDelayTemplate;
 
   // Inicjalizacja debouncerów przycisków
@@ -282,6 +281,11 @@ void buttonsActionsDependOnMenu() {
       }
       break;
     case TIME_SUNRISE_START:
+      unsigned long tSunriseStartTime = convertTimeToMillis(sunriseStartHh, sunriseStartMm, 0);
+      unsigned long tSunriseEndTime = convertTimeToMillis(sunriseEndHh, sunriseEndMm, 0);
+      unsigned long tSunsetStartTime = convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0);
+      unsigned long tSunsetEndTime = convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0);
+
       if (buttonUpDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
@@ -295,7 +299,7 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        if () {
+        if (tSunriseStartTime <= tSunriseEndTime) {
           menu = INVALID_TIME_SCREEN;
         } else {
           setValueToEeprom(eepromSunriseStartHh[0], eepromSunriseStartHh[1], sunriseStartHh);
@@ -319,10 +323,14 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        setValueToEeprom(eepromSunriseEndHh[0], eepromSunriseEndHh[1], sunriseEndHh);
-        setValueToEeprom(eepromSunriseEndMm[0], eepromSunriseEndMm[1], sunriseEndMm);
+        if (tSunriseEndTime <= tSunsetStartTime) {
+          menu = INVALID_TIME_SCREEN;
+        } else {
+          setValueToEeprom(eepromSunriseEndHh[0], eepromSunriseEndHh[1], sunriseEndHh);
+          setValueToEeprom(eepromSunriseEndMm[0], eepromSunriseEndMm[1], sunriseEndMm);
 
-        menu = MENU_SCREEN;
+          menu = MENU_SCREEN;
+        }
       }
       break;
     case TIME_SUNSET_START:
@@ -339,10 +347,14 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        setValueToEeprom(eepromSunsetStartHh[0], eepromSunsetStartHh[1], sunsetStartHh);
-        setValueToEeprom(eepromSunsetStartMm[0], eepromSunsetStartMm[1], sunsetStartMm);
+        if (tSunsetStartTime <= tSunsetEndTime) {
+          menu = INVALID_TIME_SCREEN;
+        } else {
+          setValueToEeprom(eepromSunsetStartHh[0], eepromSunsetStartHh[1], sunsetStartHh);
+          setValueToEeprom(eepromSunsetStartMm[0], eepromSunsetStartMm[1], sunsetStartMm);
 
-        menu = MENU_SCREEN;
+          menu = MENU_SCREEN;
+        }
       }
       break;
     case TIME_SUNSET_END:
@@ -359,10 +371,14 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        setValueToEeprom(eepromSunsetEndHh[0], eepromSunsetEndHh[1], sunsetEndHh);
-        setValueToEeprom(eepromSunsetEndMm[0], eepromSunsetEndMm[1], sunsetEndMm);
+        if (tSunsetEndTime <= tSunsetStartTime) {
+          menu = INVALID_TIME_SCREEN;
+        } else {
+          setValueToEeprom(eepromSunsetEndHh[0], eepromSunsetEndHh[1], sunsetEndHh);
+          setValueToEeprom(eepromSunsetEndMm[0], eepromSunsetEndMm[1], sunsetEndMm);
 
-        menu = MENU_SCREEN;
+          menu = MENU_SCREEN;
+        }
       }
       break;
     case SET_CLOCK:
