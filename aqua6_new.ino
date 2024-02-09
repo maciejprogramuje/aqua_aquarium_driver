@@ -475,7 +475,7 @@ void manageLed() {
       unsigned long sunsetStartTime = convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0);
       unsigned long sunsetEndTime = convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0);
 
-      smoothPWMIncrease(sunsetStartTime, sunsetEndTime, false, 256);
+      smoothPWMIncrease(sunsetStartTime, sunsetEndTime, false, 255);
       break;
     case LED_OFF:
       analogWrite(PWM_LED, 0);
