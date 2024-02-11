@@ -55,7 +55,7 @@ enum LedModes {
   LED_SUNSET,
   LED_ON
 };
-int ledMode;
+enum LedModes ledMode;
 
 int sunriseStartHh;
 int sunriseStartMm;
@@ -68,7 +68,7 @@ int sunsetEndHh;
 int sunsetEndMm;
 //------------------------------------- menu --------------------------------------
 //-- wyświetlanie Serial.println(menuStrings[0]);
-enum Menu {
+enum Menus {
   MAIN_SCREEN,
   INVALID_TIME_SCREEN,
   MENU_SCREEN,
@@ -109,9 +109,9 @@ const char* menuStrings[] = {
   "LED on/off"
 };
 
-int menu;
-int sizeOfMenu;
-int menuSelectedLine;
+enum Menus menu;
+int sizeOfMenus;
+enum Menus menuSelectedLine;
 //------------------------------------- eeprom ------------------------------------
 //-- adresacja pamieci eeprom (nieulotnej)
 //-- nazwa { początkowy bajt, ilosc zajmowanych bajtow }
@@ -161,7 +161,7 @@ void setup() {
   pinMode(PWM_LED, OUTPUT);
 
   menu = MENU_SCREEN;
-  sizeOfMenu = sizeof(Menu) / sizeof(Menu[0]);
+  sizeOfMenus = sizeof(Menus) / sizeof(Menus[0]);
   menuSelectedLine = MENU_SCREEN;
 
   nokiaLightDelay = nokiaLightDelayTemplate;
@@ -265,14 +265,14 @@ void buttonsActionsDependOnMenu() {
       if (buttonUpDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        menuSelectedLine--;
+        menuSelectedLine = menuSelectedLine - 1;
         if (menuSelectedLine < MENU_SCREEN) menuSelectedLine = MENU_SCREEN;
       }
       if (buttonDownDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        menuSelectedLine++;
-        if (menuSelectedLine > sizeOfMenu - 1) sizeOfMenu - 1;
+        menuSelectedLine = menuSelectedLine + 1;
+        if (menuSelectedLine > sizeOfMenus - 1) sizeOfMenus - 1;
       }
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
@@ -466,7 +466,7 @@ void manageLed() {
       unsigned long sunriseStartTime = convertTimeToMillis(sunriseStartHh, sunriseStartMm, 0);
       unsigned long sunriseEndTime = convertTimeToMillis(sunriseEndHh, sunriseEndMm, 0);
 
-      smoothPWMIncrease(sunriseStartTime, sunriseEndTime, true, 256);
+      smoothPWMIncrease(sunriseStartTime, sunriseEndTime, true, 255);
       break;
     case LED_ON:
       analogWrite(PWM_LED, 255);
@@ -580,7 +580,7 @@ void setValueToEeprom(int tStartByte, int tSizeByte, T newValue) {
 void showMenuScreen() {
   nokia.clrScr();
   nokia.setFont(SmallFont);
-  for (int i = MENU_SCREEN; i < sizeOfMenu; i++) {
+  for (int i = MENU_SCREEN; i < sizeOfMenus; i++) {
     if (menuSelectedLine == i) nokia.invertText(true);
     if (menuSelectedLine > 7) {
       nokia.print(menuStrings[i], LEFT, (i - 6) * 9);
