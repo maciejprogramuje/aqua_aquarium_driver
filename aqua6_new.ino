@@ -6,15 +6,25 @@
 #include <DallasTemperature.h>
 #include <Bounce2.h>
 
-//------------------------------------- log ---------------------------------------
-bool logs = false;
-//------------------------------------- nokia -------------------------------------
+//------------------------------------- piny -------------------------------------
 #define NOKIA_SCK 7
 #define NOKIA_MOSI 8
 #define NOKIA_DC 9
 #define NOKIA_RST 10
 #define NOKIA_CS 11
 
+#define BUTTON_UP_PIN 2
+#define BUTTON_DOWN_PIN 3
+#define BUTTON_CLICK_PIN 4
+
+#define RTC_CLK A0
+#define RTC_DAT A1
+#define RTC_RST A2
+
+#define TEMPERATURE_SENSOR A5
+
+#define PWM_LED 5
+//------------------------------------- nokia -------------------------------------
 LCD5110 nokia(NOKIA_SCK, NOKIA_MOSI, NOKIA_DC, NOKIA_RST, NOKIA_CS);
 
 extern uint8_t SmallFont[];
@@ -24,38 +34,35 @@ extern uint8_t BigNumbers[];
 int nokiaLightDelayTemplate = 100;
 int nokiaLightDelay;
 //------------------------------------- buttons -----------------------------------
-#define BUTTON_UP_PIN A2
-#define BUTTON_DOWN_PIN A3
-#define BUTTON_CLICK_PIN A4
-
 Bounce buttonUpDebouncer = Bounce();
 Bounce buttonDownDebouncer = Bounce();
 Bounce buttonClickDebouncer = Bounce();
 //------------------------------------- rtc ---------------------------------------
-#define RTC_CLK 4
-#define RTC_DAT 5
-#define RTC_RST 6
-
 virtuabotixRTC rtClock(RTC_CLK, RTC_DAT, RTC_RST);
 
 int tempHh;
 int tempMm;
-//------------------------------------- termometr ---------------------------------
-#define TEMPERATURE_SENSOR A5
 
+unsigned long currentTime;
+unsigned long currentTimeOld;
+const unsigned int timeDelta = 10;
+
+unsigned long tSunriseStartTime;
+unsigned long tSunriseEndTime;
+unsigned long tSunsetStartTime;
+unsigned long tSunsetEndTime;
+//------------------------------------- termometr ---------------------------------
 OneWire oneWire(TEMPERATURE_SENSOR);
 DallasTemperature temperatureSensor(&oneWire);
 
 float temperatureAlarmTemplate;
 float temperatureFromSensor;
 //------------------------------------- led ---------------------------------------
-#define PWM_LED 3
-
 enum LedModes {
   LED_OFF,
   LED_SUNRISE,
-  LED_SUNSET,
-  LED_ON
+  LED_ON,
+  LED_SUNSET
 };
 enum LedModes ledMode;
 
@@ -135,7 +142,7 @@ int eepromTemperatureAlarmTemplate[] = { 16, 4 };
 //------------------------------------ setup --------------------------------------
 //---------------------------------------------------------------------------------
 void setup() {
-  if (logs) Serial.begin(9600);
+  Serial.begin(9600);
 
   nokia.InitLCD();
   nokia.setFont(SmallFont);
@@ -154,6 +161,13 @@ void setup() {
   sunsetStartMm = getValueFromEeprom(eepromSunsetStartMm[0], eepromSunsetStartMm[1], 45);
   sunsetEndHh = getValueFromEeprom(eepromSunsetEndHh[0], eepromSunsetEndHh[1], 19);
   sunsetEndMm = getValueFromEeprom(eepromSunsetEndMm[0], eepromSunsetEndMm[1], 0);
+
+  tSunriseStartTime = convertTimeToSeconds(sunriseStartHh, sunriseStartMm, 0);
+  tSunriseEndTime = convertTimeToSeconds(sunriseEndHh, sunriseEndMm, 0);
+  tSunsetStartTime = convertTimeToSeconds(sunsetStartHh, sunsetStartMm, 0);
+  tSunsetEndTime = convertTimeToSeconds(sunsetEndHh, sunsetEndMm, 0);
+
+  currentTimeOld = convertTimeToSeconds(rtClock.hours, rtClock.minutes, rtClock.seconds);
 
   temperatureSensor.begin();
   temperatureSensor.setWaitForConversion(false);
@@ -183,7 +197,17 @@ void setup() {
 //---------------------------------------------------------------------------------
 void loop() {
   //update zegara z RTC
-  rtClock.updateTime();
+  updateAndSynchronizeTime();
+
+  //Serial.println("ledMode=" + String(ledMode) + ", currentTime=" + String(currentTime));
+  Serial.println("ledMode=" + String(ledMode) + ", rtClock=" + String(rtClock.hours) + ":" + String(rtClock.minutes) + ":" + String(rtClock.seconds));
+
+
+  //ustaw ledMode w zależności od aktualnego czasu
+  setLedModeByTime();
+
+  //steruj głównym oświetleniem LED
+  manageLed();
 
   //update debouncerów
   buttonUpDebouncer.update();
@@ -193,22 +217,14 @@ void loop() {
   //reakcje na przyciski w zależności od menu
   buttonsActionsDependOnMenu();
 
-  //ustaw ledMode w zależności od aktualnego czasu
-  setLedModeByTime();
-
   //odczytaj temperaturę z czujnika
   getTemperatureFromSensor();
-
-  //steruj głównym oświetleniem LED
-  manageLed();
 
   //steruj podświetleniem wyświetlacza
   manageNokiaLight();
 
   //pokaż właściwy ekran w zależności od menu
   showScreenDependOnMenu();
-
-  if (logs) Serial.println("ledMode=" + String(ledMode));
 }
 
 //------------------------------------ menu ---------------------------------------
@@ -296,11 +312,13 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        if (convertTimeToMillis(sunriseStartHh, sunriseStartMm, 0) <= convertTimeToMillis(sunriseEndHh, sunriseEndMm, 0)) {
+        if (tSunriseStartTime >= tSunriseEndTime) {
           menu = INVALID_TIME_SCREEN;
         } else {
           setValueToEeprom(eepromSunriseStartHh[0], eepromSunriseStartHh[1], sunriseStartHh);
           setValueToEeprom(eepromSunriseStartMm[0], eepromSunriseStartMm[1], sunriseStartMm);
+
+          tSunriseStartTime = convertTimeToSeconds(sunriseStartHh, sunriseStartMm, 0);
 
           menu = MENU_SCREEN;
         }
@@ -320,11 +338,13 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        if (convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0) <= convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0)) {
+        if (tSunsetEndTime <= tSunsetStartTime) {
           menu = INVALID_TIME_SCREEN;
         } else {
           setValueToEeprom(eepromSunriseEndHh[0], eepromSunriseEndHh[1], sunriseEndHh);
           setValueToEeprom(eepromSunriseEndMm[0], eepromSunriseEndMm[1], sunriseEndMm);
+
+          tSunriseEndTime = convertTimeToSeconds(sunriseEndHh, sunriseEndMm, 0);
 
           menu = MENU_SCREEN;
         }
@@ -344,11 +364,13 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        if (convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0) <= convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0)) {
+        if (tSunsetStartTime >= tSunsetEndTime) {
           menu = INVALID_TIME_SCREEN;
         } else {
           setValueToEeprom(eepromSunsetStartHh[0], eepromSunsetStartHh[1], sunsetStartHh);
           setValueToEeprom(eepromSunsetStartMm[0], eepromSunsetStartMm[1], sunsetStartMm);
+
+          tSunsetStartTime = convertTimeToSeconds(sunsetStartHh, sunsetStartMm, 0);
 
           menu = MENU_SCREEN;
         }
@@ -368,11 +390,13 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        if (convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0) <= convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0)) {
+        if (tSunsetEndTime <= tSunsetStartTime) {
           menu = INVALID_TIME_SCREEN;
         } else {
           setValueToEeprom(eepromSunsetEndHh[0], eepromSunsetEndHh[1], sunsetEndHh);
           setValueToEeprom(eepromSunsetEndMm[0], eepromSunsetEndMm[1], sunsetEndMm);
+
+          tSunsetEndTime = convertTimeToSeconds(sunsetEndHh, sunsetEndMm, 0);
 
           menu = MENU_SCREEN;
         }
@@ -439,18 +463,11 @@ void buttonsActionsDependOnMenu() {
 }
 //------------------------------------ LED ----------------------------------------
 void setLedModeByTime() {
-  unsigned long tNow = convertTimeToMillis(rtClock.hours, rtClock.minutes, rtClock.seconds);
-
-  unsigned long tSunriseStartTime = convertTimeToMillis(sunriseStartHh, sunriseStartMm, 0);
-  unsigned long tSunriseEndTime = convertTimeToMillis(sunriseEndHh, sunriseEndMm, 0);
-  unsigned long tSunsetStartTime = convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0);
-  unsigned long tSunsetEndTime = convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0);
-
-  if (tSunriseStartTime <= tNow && tNow <= tSunriseEndTime) {
+  if (tSunriseStartTime <= currentTime && currentTime <= tSunriseEndTime) {
     ledMode = LED_SUNRISE;
-  } else if (tSunriseEndTime <= tNow && tNow <= tSunsetStartTime) {
+  } else if (tSunriseEndTime <= currentTime && currentTime <= tSunsetStartTime) {
     ledMode = LED_ON;
-  } else if (tSunsetStartTime <= tNow && tNow <= tSunsetEndTime) {
+  } else if (tSunsetStartTime <= currentTime && currentTime <= tSunsetEndTime) {
     ledMode = LED_SUNSET;
   } else {
     ledMode = LED_OFF;
@@ -460,21 +477,13 @@ void setLedModeByTime() {
 void manageLed() {
   switch (ledMode) {
     case LED_SUNRISE:
-      smoothPWMIncrease(
-        convertTimeToMillis(sunriseStartHh, sunriseStartMm, 0),
-        convertTimeToMillis(sunriseEndHh, sunriseEndMm, 0),
-        true,
-        255);
+      analogWrite(PWM_LED, smoothPWMIncrease(tSunriseStartTime, tSunriseEndTime, true, 255));
       break;
     case LED_ON:
       analogWrite(PWM_LED, 255);
       break;
     case LED_SUNSET:
-      smoothPWMIncrease(
-        convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0),
-        convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0),
-        false,
-        255);
+      analogWrite(PWM_LED, smoothPWMIncrease(tSunsetStartTime, tSunsetEndTime, false, 255));
       break;
     case LED_OFF:
       analogWrite(PWM_LED, 0);
@@ -482,23 +491,19 @@ void manageLed() {
   }
 }
 
-void smoothPWMIncrease(unsigned long animationStart, unsigned long animationEnd, bool increase, int steps) {
-  unsigned long currentTime = convertTimeToMillis(rtClock.hours, rtClock.minutes, rtClock.seconds);
-
+int smoothPWMIncrease(unsigned long animationStart, unsigned long animationEnd, bool increase, int steps) {
   if (currentTime >= animationStart && currentTime <= animationEnd) {
     unsigned long elapsedTime = currentTime - animationStart;
 
-    int i = map(elapsedTime, 0, animationEnd - animationStart, 0, steps);
+    int pwmValue = map(elapsedTime, 0, animationEnd - animationStart, 0, steps);
 
     if (!increase) {
-      i = steps - i;  // Jeżeli malejemy, odwróć wartości
+      pwmValue = steps - pwmValue;  // Jeżeli malejemy, odwróć wartości
     }
 
-    int pwmValue = map(i, 0, steps, 0, 255);
+    Serial.println("pwmValue=" + String(pwmValue));
 
-    if (logs) Serial.println("pwmValue=" + String(pwmValue));
-
-    analogWrite(PWM_LED, pwmValue);
+    return pwmValue;
   }
 }
 //------------------------------------ NOKIA --------------------------------------
@@ -558,8 +563,30 @@ String getTimeNowForScreen() {
          + leadingZero(String(rtClock.seconds));
 }
 
-unsigned long convertTimeToMillis(int hours, int minutes, int seconds) {
-  return hours * 3600000 + minutes * 60000 + seconds * 1000;
+unsigned long convertTimeToSeconds(int hours, int minutes, int seconds) {
+  return hours * 3600UL + minutes * 60UL + seconds;
+}
+
+void updateAndSynchronizeTime() {
+  bool isSynchronized = false;
+  do {
+    rtClock.updateTime();
+    currentTime = convertTimeToSeconds(rtClock.hours, rtClock.minutes, rtClock.seconds);
+
+    Serial.print("currentTime="+String(currentTime) + ", currentTimeOld="+currentTimeOld);
+
+    if (currentTime > currentTimeOld && (currentTimeOld + timeDelta) > currentTime) {
+      Serial.println(", syncrhonized OK");
+      
+      isSynchronized = true;
+    } else {
+      Serial.println(", syncrhonized ERROR !!!");
+      
+      delay(1050);
+      
+      currentTimeOld = convertTimeToSeconds(rtClock.hours, rtClock.minutes, rtClock.seconds);
+    }
+  } while (!isSynchronized);
 }
 
 void timeIncremetation(int* tTime, int maxValue) {
