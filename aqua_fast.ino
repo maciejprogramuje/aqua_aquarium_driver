@@ -1,11 +1,15 @@
+#include <virtuabotixRTC.h>
+
+//------------------------------------- UWAGI -------------------------------------
+// na pinach 5 i 6 występują jakieś zakłócenia - https://www.arduino.cc/reference/en/language/functions/analog-io/analogwrite/
 //------------------------------------- led ---------------------------------------
-#define PWM_LED 3
+#define PWM_LED 5
 
 enum LedModes {
   LED_OFF,
   LED_SUNRISE,
-  LED_SUNSET,
-  LED_ON
+  LED_ON,
+  LED_SUNSET
 };
 enum LedModes ledMode;
 
@@ -18,13 +22,27 @@ int sunsetStartHh;
 int sunsetStartMm;
 int sunsetEndHh;
 int sunsetEndMm;
+//------------------------------------- rtc ---------------------------------------
+#define RTC_CLK A0
+#define RTC_DAT A1
+#define RTC_RST A2
 
-int hh = 18;
-int mm = 44;
+virtuabotixRTC rtClock(RTC_CLK, RTC_DAT, RTC_RST);
 
+int tempHh;
+int tempMm;
+
+unsigned long currentTime;
+unsigned long currentTimeOld;
+const unsigned int timeDelta = 10;
+
+unsigned long tSunriseStartTime;
+unsigned long tSunriseEndTime;
+unsigned long tSunsetStartTime;
+unsigned long tSunsetEndTime;
 //------------------------------------- setup ---------------------------------------
 void setup() {
-  Serial.begin(9600);
+  //Serial.begin(9600);
 
   pinMode(PWM_LED, OUTPUT);
 
@@ -37,27 +55,37 @@ void setup() {
   sunsetStartMm = 45;
   sunsetEndHh = 19;
   sunsetEndMm = 0;
+
+  tSunriseStartTime = convertTimeToSeconds(sunriseStartHh, sunriseStartMm, 0);
+  tSunriseEndTime = convertTimeToSeconds(sunriseEndHh, sunriseEndMm, 0);
+  tSunsetStartTime = convertTimeToSeconds(sunsetStartHh, sunsetStartMm, 0);
+  tSunsetEndTime = convertTimeToSeconds(sunsetEndHh, sunsetEndMm, 0);
+
+  currentTimeOld = convertTimeToSeconds(rtClock.hours, rtClock.minutes, rtClock.seconds);
+
+  //                      seconds, minutes, hours, day of the week, day of the month, month, year
+  //rtClock.setDS1302Time(0, 24, 14, 2, 21, 2, 2024);
 }
 
 void loop() {
+  updateAndSynchronizeTime();
+
+  //Serial.println("ledMode=" + String(ledMode) + ", currentTime=" + String(currentTime));
+  Serial.println("ledMode=" + String(ledMode) + ", rtClock=" + String(rtClock.hours) + ":" + String(rtClock.minutes) + ":" + String(rtClock.seconds));
+
   setLedModeByTime();
 
   manageLed();
 
-  delay(500);
+  delay(1000);
 }
 
 void setLedModeByTime() {
-  unsigned long tNow = convertTimeToMillis(hh, mm, 0) + millis();
-
-  unsigned long tSunriseEndTime = convertTimeToMillis(sunriseEndHh, sunriseEndMm, 0);
-  unsigned long tSunsetStartTime = convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0);
-
-  if (convertTimeToMillis(sunriseStartHh, sunriseStartMm, 0) <= tNow && tNow <= tSunriseEndTime) {
+  if (tSunriseStartTime <= currentTime && currentTime <= tSunriseEndTime) {
     ledMode = LED_SUNRISE;
-  } else if (tSunriseEndTime <= tNow && tNow <= tSunsetStartTime) {
+  } else if (tSunriseEndTime <= currentTime && currentTime <= tSunsetStartTime) {
     ledMode = LED_ON;
-  } else if (tSunsetStartTime <= tNow && tNow <= convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0)) {
+  } else if (tSunsetStartTime <= currentTime && currentTime <= tSunsetEndTime) {
     ledMode = LED_SUNSET;
   } else {
     ledMode = LED_OFF;
@@ -67,21 +95,13 @@ void setLedModeByTime() {
 void manageLed() {
   switch (ledMode) {
     case LED_SUNRISE:
-      smoothPWMIncrease(
-        convertTimeToMillis(sunriseStartHh, sunriseStartMm, 0),
-        convertTimeToMillis(sunriseEndHh, sunriseEndMm, 0),
-        true,
-        255);
+      analogWrite(PWM_LED, smoothPWMIncrease(tSunriseStartTime, tSunriseEndTime, true, 255));
       break;
     case LED_ON:
       analogWrite(PWM_LED, 255);
       break;
     case LED_SUNSET:
-      smoothPWMIncrease(
-        convertTimeToMillis(sunsetStartHh, sunsetStartMm, 0),
-        convertTimeToMillis(sunsetEndHh, sunsetEndMm, 0),
-        false,
-        255);
+      analogWrite(PWM_LED, smoothPWMIncrease(tSunsetStartTime, tSunsetEndTime, false, 255));
       break;
     case LED_OFF:
       analogWrite(PWM_LED, 0);
@@ -89,42 +109,44 @@ void manageLed() {
   }
 }
 
-void smoothPWMIncrease(unsigned long animationStart, unsigned long animationEnd, bool increase, int steps) {
-  unsigned long currentTime = convertTimeToMillis(hh, mm, 0) + millis();
-
+int smoothPWMIncrease(unsigned long animationStart, unsigned long animationEnd, bool increase, int steps) {
   if (currentTime >= animationStart && currentTime <= animationEnd) {
     unsigned long elapsedTime = currentTime - animationStart;
 
-    int i = map(elapsedTime, 0, animationEnd - animationStart, 0, steps);
+    int pwmValue = map(elapsedTime, 0, animationEnd - animationStart, 0, steps);
 
     if (!increase) {
-      i = steps - i;  // Jeżeli malejemy, odwróć wartości
+      pwmValue = steps - pwmValue;  // Jeżeli malejemy, odwróć wartości
     }
-
-    int pwmValue = map(i, 0, steps, 0, 255);
 
     Serial.println("pwmValue=" + String(pwmValue));
 
-    analogWrite(PWM_LED, pwmValue);
+    return pwmValue;
   }
 }
 
-unsigned long convertTimeToMillis(int hours, int minutes, int seconds) {
-  return hours * 3600000 + minutes * 60000 + seconds * 1000;
+unsigned long convertTimeToSeconds(int hours, int minutes, int seconds) {
+  return hours * 3600UL + minutes * 60UL + seconds;
 }
 
-String millisToTime(unsigned long millis) {
-  unsigned long seconds = millis / 1000;
-  unsigned long minutes = seconds / 60;
-  unsigned long hours = minutes / 60;
+void updateAndSynchronizeTime() {
+  bool isSynchronized = false;
+  do {
+    rtClock.updateTime();
+    currentTime = convertTimeToSeconds(rtClock.hours, rtClock.minutes, rtClock.seconds);
 
-  // Oblicz pozostałe minuty i sekundy
-  seconds %= 60;
-  minutes %= 60;
+    Serial.print("currentTime="+String(currentTime) + ", currentTimeOld="+currentTimeOld);
 
-  // Tworzenie stringa w formacie hh:mm:ss
-  char result[9];  // 8 znaków dla czasu + 1 dla zakończenia ciągu znaków
-  snprintf(result, sizeof(result), "%02lu:%02lu:%02lu", hours, minutes, seconds);
-
-  return String(result);
+    if (currentTime > currentTimeOld && (currentTimeOld + timeDelta) > currentTime) {
+      Serial.println(", syncrhonized OK");
+      
+      isSynchronized = true;
+    } else {
+      Serial.println(", syncrhonized ERROR !!!");
+      
+      delay(1050);
+      
+      currentTimeOld = convertTimeToSeconds(rtClock.hours, rtClock.minutes, rtClock.seconds);
+    }
+  } while (!isSynchronized);
 }
