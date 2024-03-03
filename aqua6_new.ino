@@ -208,9 +208,8 @@ void setup() {
   temperatureSensor.begin();
   temperatureSensor.setWaitForConversion(false);
 
-  temperatureFromSensor = 33.0;
-
   pinMode(PWM_LED, OUTPUT);
+
   ignoreTimeForLed = false;
   ignoreTimeForSetTime = false;
 
@@ -259,7 +258,7 @@ void loop() {
   buttonsActionsDependOnMenu();
 
   //odczytaj temperaturę z czujnika
-  //getTemperatureFromSensor();
+  getTemperatureFromSensor();
 
   //steruj podświetleniem wyświetlacza
   manageNokiaLight();
@@ -308,6 +307,14 @@ void showScreenDependOnMenu() {
 void buttonsActionsDependOnMenu() {
   switch (menu) {
     case MAIN_SCREEN:
+      if (buttonUpDebouncer.fell() || buttonDownDebouncer.fell()) {
+        nokiaLightDelay = nokiaLightDelayTemplate;
+      } else if (buttonClickDebouncer.fell()) {
+        nokiaLightDelay = nokiaLightDelayTemplate;
+
+        menu = MENU_SCREEN;
+      }
+      break;
     case INVALID_TIME_SCREEN:
       if (buttonUpDebouncer.fell() || buttonDownDebouncer.fell() || buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
@@ -382,7 +389,7 @@ void buttonsActionsDependOnMenu() {
 
         tSunriseEndTime = convertTimeToSeconds(sunriseEndHh, sunriseEndMm, 0);
 
-        if (tSunriseEndTime > tSunsetStartTime) {
+        if (tSunriseEndTime > tSunsetStartTime || tSunriseEndTime < tSunriseStartTime) {
           menu = INVALID_TIME_SCREEN;
 
           sunriseEndHh = getValueFromEeprom(eepromSunriseEndHh[0], eepromSunriseEndHh[1], 10);
@@ -413,7 +420,7 @@ void buttonsActionsDependOnMenu() {
 
         tSunsetStartTime = convertTimeToSeconds(sunsetStartHh, sunsetStartMm, 0);
 
-        if (tSunsetStartTime > tSunsetEndTime) {
+        if (tSunsetStartTime > tSunsetEndTime || tSunsetStartTime < tSunriseEndTime) {
           menu = INVALID_TIME_SCREEN;
 
           sunsetStartHh = getValueFromEeprom(eepromSunsetStartHh[0], eepromSunsetStartHh[1], 18);
@@ -507,7 +514,9 @@ void buttonsActionsDependOnMenu() {
       if (buttonClickDebouncer.fell()) {
         nokiaLightDelay = nokiaLightDelayTemplate;
 
-        setValueToEeprom(eepromTemperatureAlarmTemplate[0], eepromTemperatureAlarmTemplate[1], temperatureAlarmTemplate);
+        if (temperatureAlarmTemplate != getValueFromEeprom(eepromTemperatureAlarmTemplate[0], eepromTemperatureAlarmTemplate[1], 30.0)) {
+          setValueToEeprom(eepromTemperatureAlarmTemplate[0], eepromTemperatureAlarmTemplate[1], temperatureAlarmTemplate);
+        }
 
         menu = MENU_SCREEN;
       }
@@ -556,13 +565,15 @@ void manageLed() {
       analogWrite(PWM_LED, smoothPWMIncrease(tSunriseStartTime, tSunriseEndTime, true, 255));
       break;
     case LED_ON:
-      analogWrite(PWM_LED, 255);
+      pwmValue = 255;
+      analogWrite(PWM_LED, pwmValue);
       break;
     case LED_SUNSET:
       analogWrite(PWM_LED, smoothPWMIncrease(tSunsetStartTime, tSunsetEndTime, false, 255));
       break;
     case LED_OFF:
-      analogWrite(PWM_LED, 0);
+      pwmValue = 0;
+      analogWrite(PWM_LED, pwmValue);
       break;
   }
 }
@@ -592,8 +603,7 @@ void setNokiaLight(bool state) {
 }
 
 void manageNokiaLight() {
-  //if (nokiaLightDelay > 0 || temperatureFromSensor >= temperatureAlarmTemplate) {
-  if (nokiaLightDelay > 0) {
+  if (nokiaLightDelay > 0 || temperatureFromSensor >= temperatureAlarmTemplate) {
     setNokiaLight(true);
   } else {
     setNokiaLight(false);
@@ -772,7 +782,7 @@ void showTemperatureAlarmTemplateSettingScreen(String tTemperatureAlarm) {
   nokia.setCursor(78, 20);
   nokia.setTextSize(1);
   nokia.print("*");
-  
+
   nokia.display();
 }
 
