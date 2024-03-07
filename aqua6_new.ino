@@ -9,15 +9,15 @@
 
 //------------------------------------- piny -------------------------------------
 #define NOKIA_BACKGROUND_PWM 6
-#define NOKIA_RST 7
-#define NOKIA_CE 8
+#define NOKIA_RST 11
+#define NOKIA_CE 10
 #define NOKIA_DC 9
-#define NOKIA_DIN 10
-#define NOKIA_CLK 11
+#define NOKIA_DIN 8
+#define NOKIA_CLK 7
 
-//biały - masa, fioletowy - up, niebieski - down (w stronę kółka), zielony - klik
-#define BUTTON_UP_PIN 2
-#define BUTTON_DOWN_PIN 3
+//biały - masa, niebieski - up, fioletowy - down (w stronę kółka), zielony - klik
+#define BUTTON_UP_PIN 3
+#define BUTTON_DOWN_PIN 2
 #define BUTTON_CLICK_PIN 4
 
 #define RTC_CLK A0
@@ -168,6 +168,7 @@ void setup() {
 
   nokia.begin();
   nokia.setContrast(50);
+  nokia.setRotation(2);
   nokia.clearDisplay();
   setNokiaLight(true);
 
@@ -705,6 +706,7 @@ void showMenuScreen() {
       k = 30;
     }
 
+    //nokia.setRotation(2);
     nokia.setCursor(0, i * 10 - MENU_SCREEN * 10 - k);
     nokia.print(menuStrings[i]);
     nokia.setCursor(78, i * 10 - MENU_SCREEN * 10 - k);
@@ -722,6 +724,8 @@ void showMainScreen(String tDateNow, String tTimeNow, String tTemperature) {
   nokia.clearDisplay();
   nokia.setTextSize(1);
   nokia.setTextColor(BLACK);
+
+  //nokia.setRotation(2);
 
   nokia.setCursor(19, 0);
   nokia.print(tTimeNow);
